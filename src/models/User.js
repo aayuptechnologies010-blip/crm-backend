@@ -1,0 +1,60 @@
+const mongoose = require('mongoose');
+const bcrypt = require('bcryptjs');
+const crypto = require('crypto');
+
+const userSchema = new mongoose.Schema({
+  name:         { type: String, required: true, trim: true },
+  email:        { type: String, required: true, unique: true, lowercase: true, trim: true },
+  password:     { type: String, required: true, minlength: 4 },
+  role:         { type: String, enum: ['Super Admin', 'Admin', 'Branch Admin', 'Sales Executive'], default: 'Sales Executive' },
+  branch:       { type: String, default: '' },
+  team:         { type: String, default: '-' },
+  avatar:       { type: String },
+  profileImage: { type: String },
+  phone:        { type: String, default: '' },
+  status:       { type: String, enum: ['Active', 'Inactive'], default: 'Active' },
+  leads:        { type: Number, default: 0 },
+  converted:    { type: Number, default: 0 },
+  notifications: {
+    newLead:      { type: Boolean, default: true },
+    assignment:   { type: Boolean, default: true },
+    followup:     { type: Boolean, default: true },
+    conversion:   { type: Boolean, default: false },
+    weeklyReport: { type: Boolean, default: true },
+  },
+  resetPasswordToken:   { type: String },
+  resetPasswordExpires: { type: Date },
+  sessionToken:         { type: String, default: null },
+  fcmToken:             { type: String, default: null },
+}, { timestamps: true });
+
+userSchema.methods.generateResetToken = function () {
+  const token = crypto.randomBytes(32).toString('hex');
+  this.resetPasswordToken   = crypto.createHash('sha256').update(token).digest('hex');
+  this.resetPasswordExpires = Date.now() + 60 * 60 * 1000; // 1 hour
+  return token;
+};
+
+// Auto-generate avatar initials
+userSchema.pre('save', async function (next) {
+  if (this.isModified('name') || !this.avatar) {
+    this.avatar = this.name.split(' ').map(n => n[0]).join('').toUpperCase().slice(0, 2);
+  }
+  if (this.isModified('password')) {
+    this.password = await bcrypt.hash(this.password, 10);
+  }
+  next();
+});
+
+userSchema.methods.comparePassword = function (plain) {
+  return bcrypt.compare(plain, this.password);
+};
+
+// Never return password
+userSchema.methods.toJSON = function () {
+  const obj = this.toObject();
+  delete obj.password;
+  return obj;
+};
+
+module.exports = mongoose.model('User', userSchema);
